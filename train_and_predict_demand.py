@@ -219,29 +219,29 @@ def prepare_features(orders_df):
     Prepare features for the demand forecasting model with temporal and spatial adjustments.
     """
     # Ensure timestamp is in datetime format
-    orders_df['timestamp'] = pd.to_datetime(orders_df['timestamp'])
+    orders_df['timestamp'] = pd.to_datetime(orders_df['Timestamp'])
     orders_df['time_bin'] = pd.to_datetime(orders_df['time_bin'])
     
-    # Aggregate orders per H3 hex and 15-min bin
-    demand_df = orders_df.groupby(['h3_index', 'time_bin']).size().reset_index(name='demand')
+    # Aggregate orders per H3 hex and 15-min bin => row reduction
+    demand_df = orders_df.groupby(['Grid_ID', 'time_bin']).size().reset_index(name='demand')
     
     # Add temporal features
     demand_df['hour'] = demand_df['time_bin'].dt.hour
     demand_df['day_of_week'] = demand_df['time_bin'].dt.dayofweek
     
     # Sort by location and time
-    demand_df = demand_df.sort_values(['h3_index', 'time_bin'])
+    demand_df = demand_df.sort_values(['Grid_ID', 'time_bin'])
     
     # Create lag features (previous 4 time windows = 1 hour of history)
     for lag in range(1, 5):
-        demand_df[f'demand_lag_{lag}'] = demand_df.groupby('h3_index')['demand'].shift(lag)
+        demand_df[f'demand_lag_{lag}'] = demand_df.groupby('Grid_ID')['demand'].shift(lag)
     
     # Add rolling demand features (e.g., demand over the last 2 hours)
-    demand_df['rolling_2h'] = demand_df.groupby('h3_index')['demand'].rolling(window=8, min_periods=1).sum().reset_index(0, drop=True)
+    demand_df['rolling_2h'] = demand_df.groupby('Grid_ID')['demand'].rolling(window=8, min_periods=1).sum().reset_index(0, drop=True)
     
     # Add spatial features (demand from neighboring grids)
     demand_df['neighbor_demand'] = demand_df.apply(
-        lambda row: calculate_neighbor_demand(row['h3_index'], row['time_bin'], demand_df), axis=1
+        lambda row: calculate_neighbor_demand(row['Grid_ID'], row['time_bin'], demand_df), axis=1
     )
     
     # Drop rows with NaN values (first 4 time bins for each h3_index)
@@ -260,7 +260,7 @@ def calculate_neighbor_demand(h3_index, time_bin, demand_df):
         
         # Filter demand_df for the same time_bin and neighboring grids
         neighbor_demand = demand_df[
-            (demand_df['h3_index'].isin(neighbors)) & (demand_df['time_bin'] == time_bin)
+            (demand_df['Grid_ID'].isin(neighbors)) & (demand_df['time_bin'] == time_bin)
         ]['demand'].mean()
         
         return neighbor_demand if not np.isnan(neighbor_demand) else 0
