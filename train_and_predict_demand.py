@@ -199,6 +199,151 @@
 #     main()
 # -------------------------------------------------------------------------------------------------
 # version 2
+# import pandas as pd
+# import numpy as np
+# import h3
+# from xgboost import XGBRegressor
+# from datetime import datetime, timedelta
+
+# from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+# from sklearn.model_selection import train_test_split
+# import joblib
+# import os
+# import matplotlib.pyplot as plt
+
+# # Set random seed for reproducibility
+# np.random.seed(42)
+
+# def prepare_features(orders_df):
+#     """
+#     Prepare features for the demand forecasting model with temporal and spatial adjustments.
+#     """
+#     # Ensure timestamp is in datetime format
+#     orders_df['timestamp'] = pd.to_datetime(orders_df['Timestamp'])
+#     orders_df['time_bin'] = pd.to_datetime(orders_df['time_bin'])
+    
+#     # Aggregate orders per H3 hex and 15-min bin => row reduction
+#     demand_df = orders_df.groupby(['Grid_ID', 'time_bin']).size().reset_index(name='demand')
+    
+#     # Add temporal features
+#     demand_df['hour'] = demand_df['time_bin'].dt.hour
+#     demand_df['day_of_week'] = demand_df['time_bin'].dt.dayofweek
+    
+#     # Sort by location and time
+#     demand_df = demand_df.sort_values(['Grid_ID', 'time_bin'])
+    
+#     # Create lag features (previous 4 time windows = 1 hour of history)
+#     for lag in range(1, 5):
+#         demand_df[f'demand_lag_{lag}'] = demand_df.groupby('Grid_ID')['demand'].shift(lag)
+    
+#     # Add rolling demand features (e.g., demand over the last 2 hours)
+#     demand_df['rolling_2h'] = demand_df.groupby('Grid_ID')['demand'].rolling(window=8, min_periods=1).sum().reset_index(0, drop=True)
+    
+#     # Add spatial features (demand from neighboring grids)
+#     demand_df['neighbor_demand'] = demand_df.apply(
+#         lambda row: calculate_neighbor_demand(row['Grid_ID'], row['time_bin'], demand_df), axis=1
+#     )
+    
+#     # Drop rows with NaN values (first 4 time bins for each h3_index)
+#     demand_df = demand_df.dropna()
+    
+#     return demand_df
+
+# def calculate_neighbor_demand(h3_index, time_bin, demand_df):
+#     """
+#     Calculate the average demand from neighboring grids.
+#     """
+#     try:
+#         # Get neighboring grids using H3
+#         neighbors = h3.grid_ring(h3_index, 1)
+#         neighbors = [n for n in neighbors if n != h3_index]
+        
+#         # Filter demand_df for the same time_bin and neighboring grids
+#         neighbor_demand = demand_df[
+#             (demand_df['Grid_ID'].isin(neighbors)) & (demand_df['time_bin'] == time_bin)
+#         ]['demand'].mean()
+        
+#         return neighbor_demand if not np.isnan(neighbor_demand) else 0
+#     except Exception as e:
+#         print(f"Error calculating neighbor demand for {h3_index}: {e}")
+#         return 0
+# def train_and_evaluate_model(demand_df):
+#     """
+#     Train XGBoost model for demand forecasting and evaluate on test set.
+#     """
+#     # Prepare data for training
+#     feature_cols = [
+#         'hour', 'day_of_week', 'demand_lag_1', 'demand_lag_2', 
+#         'demand_lag_3', 'demand_lag_4', 'rolling_2h', 'neighbor_demand'
+#     ]
+#     X = demand_df[feature_cols]
+#     y = demand_df['demand']
+    
+#     # Split data into training and testing sets (80:20)
+#     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+#     print(f"Training set size: {len(X_train)}, Test set size: {len(X_test)}")
+    
+#     # Train XGBRegressor model
+#     model = XGBRegressor(
+#         objective='reg:squarederror', 
+#         eta=0.05, 
+#         max_depth=6, 
+#         subsample=0.8, 
+#         random_state=42
+#     )
+#     model.fit(X_train, y_train)
+    
+#     # Save feature columns for consistency during prediction
+#     feature_info = {
+#         'feature_columns': feature_cols,
+#         'test_metrics': {
+#             'rmse': np.sqrt(mean_squared_error(y_test, model.predict(X_test))),
+#             'mae': mean_absolute_error(y_test, model.predict(X_test)),
+#             'r2': r2_score(y_test, model.predict(X_test))
+#         }
+#     }
+#     joblib.dump(feature_info, "models/demand_forecast_features.joblib")
+#     print("Feature information saved for later use")
+    
+#     return model
+# def main():
+#     # Load Jan 1 orders data
+#     try:
+#         orders_df = pd.read_csv("data/jan1_orders.csv")
+#     except FileNotFoundError:
+#         print("Error: Could not find jan1_orders.csv in the data directory")
+#         return
+    
+#     print(f"Loaded {len(orders_df)} orders for processing")
+    
+#     # Prepare features
+#     demand_df = prepare_features(orders_df)
+#     print(f"Prepared {len(demand_df)} time-bin records for modeling")
+    
+#     # Train and evaluate the model
+#     model = train_and_evaluate_model(demand_df)
+    
+#     # Create models directory if it doesn't exist
+#     os.makedirs("models", exist_ok=True)
+    
+#     # Save the model
+#     model_path = "models/demand_forecast_xgb.joblib"
+#     joblib.dump(model, model_path)
+#     print(f"Model saved to {model_path}")
+    
+#     # Load and display test metrics from the saved feature info
+#     feature_info = joblib.load("models/demand_forecast_features.joblib")
+#     test_metrics = feature_info['test_metrics']
+#     print("\nTest Metrics:")
+#     print(f"RMSE: {test_metrics['rmse']:.4f}")
+#     print(f"MAE: {test_metrics['mae']:.4f}")
+#     print(f"R2 Score: {test_metrics['r2']:.4f}")
+# if __name__ == "__main__":
+#     main()
+
+#####################VERSION 3#####################################
+
 import pandas as pd
 import numpy as np
 import h3
@@ -210,6 +355,8 @@ from sklearn.model_selection import train_test_split
 import joblib
 import os
 import matplotlib.pyplot as plt
+
+import optuna
 
 # Set random seed for reproducibility
 np.random.seed(42)
@@ -225,12 +372,20 @@ def prepare_features(orders_df):
     # Aggregate orders per H3 hex and 15-min bin => row reduction
     demand_df = orders_df.groupby(['Grid_ID', 'time_bin']).size().reset_index(name='demand')
     
-    # Add temporal features
-    demand_df['hour'] = demand_df['time_bin'].dt.hour
-    demand_df['day_of_week'] = demand_df['time_bin'].dt.dayofweek
     
     # Sort by location and time
     demand_df = demand_df.sort_values(['Grid_ID', 'time_bin'])
+    # Add temporal features
+    demand_df['hour'] = demand_df['time_bin'].dt.hour
+    demand_df['day_of_week'] = demand_df['time_bin'].dt.dayofweek
+    demand_df['is_weekend'] = (demand_df['day_of_week'] >= 5).astype(int)
+    demand_df['time_of_day'] = demand_df['hour'].apply(
+        lambda h: 'morning' if 6 <= h < 11 else 
+                  'lunch' if 11 <= h < 14 else
+                  'afternoon' if 14 <= h < 17 else
+                  'dinner' if 17 <= h < 21 else 'night'
+    )
+    demand_df = pd.get_dummies(demand_df, columns=['time_of_day'])
     
     # Create lag features (previous 4 time windows = 1 hour of history)
     for lag in range(1, 5):
@@ -239,23 +394,36 @@ def prepare_features(orders_df):
     # Add rolling demand features (e.g., demand over the last 2 hours)
     demand_df['rolling_2h'] = demand_df.groupby('Grid_ID')['demand'].rolling(window=8, min_periods=1).sum().reset_index(0, drop=True)
     
-    # Add spatial features (demand from neighboring grids)
-    demand_df['neighbor_demand'] = demand_df.apply(
-        lambda row: calculate_neighbor_demand(row['Grid_ID'], row['time_bin'], demand_df), axis=1
+    # Add multi-level temporal aggregation
+    demand_df['rolling_4h'] = demand_df.groupby('Grid_ID')['demand'].rolling(window=16, min_periods=1).sum().reset_index(0, drop=True)
+    
+    # Enhanced spatial features - two rings of neighbors
+    demand_df['neighbor_demand_ring1'] = demand_df.apply(
+        lambda row: calculate_neighbor_demand(row['Grid_ID'], row['time_bin'], demand_df, ring=1), axis=1
+    )
+    demand_df['neighbor_demand_ring2'] = demand_df.apply(
+        lambda row: calculate_neighbor_demand(row['Grid_ID'], row['time_bin'], demand_df, ring=2), axis=1
     )
     
+    # Calculate spatial-temporal patterns
+    demand_df['spatial_temporal_trend'] = demand_df.apply(
+        lambda row: calculate_spatial_temporal_trend(row['Grid_ID'], row['time_bin'], demand_df), axis=1
+    )
+    demand_df['hour_dow_interaction'] = demand_df['hour'] * demand_df['day_of_week']
+    demand_df['demand_change_rate'] = demand_df['demand_lag_1'] - demand_df['demand_lag_2']
+    demand_df['relative_neighbor_demand'] = demand_df['neighbor_demand_ring1'] / (1 + demand_df['demand_lag_1'])
     # Drop rows with NaN values (first 4 time bins for each h3_index)
     demand_df = demand_df.dropna()
     
     return demand_df
 
-def calculate_neighbor_demand(h3_index, time_bin, demand_df):
+def calculate_neighbor_demand(h3_index, time_bin, demand_df, ring =1):
     """
     Calculate the average demand from neighboring grids.
     """
     try:
         # Get neighboring grids using H3
-        neighbors = h3.grid_ring(h3_index, 1)
+        neighbors = h3.grid_ring(h3_index, ring)
         neighbors = [n for n in neighbors if n != h3_index]
         
         # Filter demand_df for the same time_bin and neighboring grids
@@ -267,54 +435,180 @@ def calculate_neighbor_demand(h3_index, time_bin, demand_df):
     except Exception as e:
         print(f"Error calculating neighbor demand for {h3_index}: {e}")
         return 0
+    
+def calculate_spatial_temporal_trend(h3_index, time_bin, demand_df):
+    """Calculate trends across both space and time"""
+    try:
+        # Get demand for this grid for previous time periods
+        prev_bin = time_bin - timedelta(minutes=15)
+        current_grid_prev = demand_df[
+            (demand_df['Grid_ID'] == h3_index) & 
+            (demand_df['time_bin'] == prev_bin)
+        ]['demand'].mean() or 0
+        
+        # Get demand for neighboring grids for previous time periods
+        neighbors = h3.grid_ring(h3_index, 1)
+        neighbors_prev = demand_df[
+            (demand_df['Grid_ID'].isin(neighbors)) & 
+            (demand_df['time_bin'] == prev_bin)
+        ]['demand'].mean() or 0
+        
+        # Return difference between trends
+        return neighbors_prev - current_grid_prev
+    except:
+        return 0
+    
 def train_and_evaluate_model(demand_df):
-    """
-    Train XGBoost model for demand forecasting and evaluate on test set.
-    """
-    # Prepare data for training
+    # Add more feature columns
     feature_cols = [
-        'hour', 'day_of_week', 'demand_lag_1', 'demand_lag_2', 
-        'demand_lag_3', 'demand_lag_4', 'rolling_2h', 'neighbor_demand'
+        'hour', 'day_of_week', 'is_weekend',
+        'demand_lag_1', 'demand_lag_2', 'demand_lag_3', 'demand_lag_4', 
+        'rolling_2h', 'rolling_4h',
+        'neighbor_demand_ring1', 'neighbor_demand_ring2', 'spatial_temporal_trend',
+        'time_of_day_morning', 'time_of_day_lunch', 'time_of_day_afternoon',
+        'time_of_day_dinner', 'time_of_day_night'
     ]
+    
+    # Create and train XGBoost with hyperparameter tuning with optuna    
+    def objective(trial):
+        params = {
+            'objective': 'reg:squarederror',
+            'max_depth': trial.suggest_int('max_depth', 3, 8),
+            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.1),
+            'n_estimators': trial.suggest_int('n_estimators', 50, 200),
+            'subsample': trial.suggest_float('subsample', 0.6, 0.9),
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 0.9),
+            'reg_lambda': trial.suggest_float('reg_lambda', 1.0, 5.0),
+            'reg_alpha': trial.suggest_float('reg_alpha', 0.1, 1.0),
+        }
+        
+        model = XGBRegressor(**params, random_state=42)
+        model.fit(X_train, y_train)
+        
+        preds = model.predict(X_val)
+        rmse = np.sqrt(mean_squared_error(y_val, preds))
+        return rmse
+    
+    # Split data into train, validation, test
     X = demand_df[feature_cols]
     y = demand_df['demand']
     
-    # Split data into training and testing sets (80:20)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.15, random_state=42)
+    X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=0.2, random_state=42)
     
-    print(f"Training set size: {len(X_train)}, Test set size: {len(X_test)}")
+    # Run hyperparameter optimization
+    study = optuna.create_study(direction='minimize')
+    study.optimize(objective, n_trials=20)
     
-    # Train XGBRegressor model
-    model = XGBRegressor(
-        objective='reg:squarederror', 
-        eta=0.05, 
-        max_depth=6, 
-        subsample=0.8, 
-        random_state=42
-    )
-    model.fit(X_train, y_train)
+    best_params = study.best_params
+    print(f"Best parameters: {best_params}")
     
-    # Save feature columns for consistency during prediction
-    feature_info = {
-        'feature_columns': feature_cols,
-        'test_metrics': {
-            'rmse': np.sqrt(mean_squared_error(y_test, model.predict(X_test))),
-            'mae': mean_absolute_error(y_test, model.predict(X_test)),
-            'r2': r2_score(y_test, model.predict(X_test))
-        }
-    }
-    joblib.dump(feature_info, "models/demand_forecast_features.joblib")
-    print("Feature information saved for later use")
+    # Train final model with best parameters
+    best_params['objective'] = 'reg:squarederror'
+    best_model = XGBRegressor(**best_params, random_state=42)
+    best_model.fit(X_train_val, y_train_val)  # Train on combined train+val
     
-    return model
+    # Evaluate on test set
+    y_pred = best_model.predict(X_test)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    mae = mean_absolute_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+    
+    print(f"Test RMSE: {rmse:.4f}")
+    print(f"Test MAE: {mae:.4f}")
+    print(f"Test R2: {r2:.4f}")
+    
+    # Feature importance analysis
+    feature_importance = pd.DataFrame({
+        'feature': feature_cols,
+        'importance': best_model.feature_importances_
+    }).sort_values('importance', ascending=False)
+    
+    print("\nTop 10 features by importance:")
+    print(feature_importance.head(10))
+    
+    return best_model
+
+def augment_data(orders_df):
+    """Create synthetic data to augment the training set"""
+    # Clone the original data
+    augmented_df = orders_df.copy()
+    
+    # Determine the correct column names in the dataframe
+    # Try to find the order ID column (could be 'order_id', 'Order_ID', etc.)
+    order_id_col = None
+    for possible_name in ['order_id', 'Order_ID', 'order_ID', 'OrderID']:
+        if possible_name in orders_df.columns:
+            order_id_col = possible_name
+            break
+    
+    # If no order ID column found, create one
+    if order_id_col is None:
+        print("No order ID column found, creating 'order_id'")
+        orders_df['order_id'] = [f"order_{i}" for i in range(len(orders_df))]
+        order_id_col = 'order_id'
+    
+    # Similarly for timestamp and grid ID columns
+    timestamp_col = None
+    for possible_name in ['timestamp', 'Timestamp', 'time']:
+        if possible_name in orders_df.columns:
+            timestamp_col = possible_name
+            break
+    
+    if timestamp_col is None:
+        print("Error: No timestamp column found")
+        return orders_df  # Return original without augmentation
+    
+    grid_col = None
+    for possible_name in ['Grid_ID', 'grid_id', 'h3_index', 'grid']:
+        if possible_name in orders_df.columns:
+            grid_col = possible_name
+            break
+    
+    if grid_col is None:
+        print("Error: No grid column found")
+        return orders_df  # Return original without augmentation
+    
+    # Print the columns we've identified
+    print(f"Using columns: {order_id_col}, {timestamp_col}, {grid_col}")
+    
+    # Create similar orders with small variations in timestamp and location
+    synthetic_orders = []
+    for _, order in orders_df.iterrows():
+        # Add time-shifted versions (±30-60 minutes)
+        for time_shift in [-60, -30, 30, 60]:
+            new_order = order.copy()
+            new_order[order_id_col] = f"synth_{order[order_id_col]}_{time_shift}"
+            new_order[timestamp_col] = pd.to_datetime(order[timestamp_col]) + timedelta(minutes=time_shift)
+            synthetic_orders.append(new_order)
+            
+        # Add spatially-shifted versions (to adjacent grids)
+        try:
+            neighbors = h3.grid_ring(order[grid_col], 1)
+            for neighbor in neighbors[:2]:  # Use just 2 neighbors
+                new_order = order.copy()
+                new_order[order_id_col] = f"synth_{order[order_id_col]}_{neighbor[-4:]}"
+                new_order[grid_col] = neighbor
+                synthetic_orders.append(new_order)
+        except Exception as e:
+            print(f"Error creating spatial variants: {e}")
+            pass
+    
+    # Convert to DataFrame and concatenate with original
+    synthetic_df = pd.DataFrame(synthetic_orders)
+    augmented_df = pd.concat([augmented_df, synthetic_df], ignore_index=True)
+    
+    print(f"Augmented data: {len(orders_df)} original orders + {len(synthetic_orders)} synthetic = {len(augmented_df)} total")
+    return augmented_df
+
 def main():
     # Load Jan 1 orders data
     try:
-        orders_df = pd.read_csv("data/jan1_orders.csv")
+        orders_df = pd.read_csv("data/jan_4days_orders.csv")
     except FileNotFoundError:
         print("Error: Could not find jan1_orders.csv in the data directory")
         return
-    
+    orders_df = augment_data(orders_df)
     print(f"Loaded {len(orders_df)} orders for processing")
     
     # Prepare features
